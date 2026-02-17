@@ -3,6 +3,8 @@ let bodyPose;
 let poses = [];
 let modelLoaded = false;
 
+const APP_VERSION = 'v1.2';
+
 // Posture status
 let postureGood = true;
 let badPostureCount = 0;
@@ -19,6 +21,8 @@ const ALERT_COOLDOWN = 5000; // 5 seconds between alerts
 let referenceNoseY = null;
 let referenceShoulderY = null;
 
+console.log('🪑 Houding Monitor ' + APP_VERSION + ' - Starting...');
+
 function preload() {
     // BodyPose model laden
     bodyPose = ml5.bodyPose('MoveNet', {flipped: true});
@@ -28,10 +32,14 @@ function setup() {
     let canvas = createCanvas(640, 480);
     canvas.parent('canvas-container');
     
+    console.log('🎥 Setting up webcam...');
+    
     // Webcam setup
     video = createCapture(VIDEO);
     video.size(640, 480);
     video.hide();
+    
+    console.log('🤖 Starting pose detection...');
     
     // Start pose detection
     bodyPose.detectStart(video, gotPoses);
@@ -39,6 +47,7 @@ function setup() {
     // Update status
     setTimeout(() => {
         modelLoaded = true;
+        console.log('✅ Model loaded and ready!');
         updateStatus('loading', 'Camera en AI zijn klaar!', 'Begin met rechte rug zitten...');
     }, 2000);
 }
@@ -79,6 +88,11 @@ function draw() {
 
 function gotPoses(results) {
     poses = results;
+    
+    // Debug: log first time we get poses
+    if (results.length > 0 && frameCount % 120 === 0) {
+        console.log('📊 Poses detected:', results.length, 'pose(s)');
+    }
 }
 
 function drawSkeleton(pose) {
@@ -107,12 +121,18 @@ function checkPosture(pose) {
     
     // Check if all parts are visible
     if (!nose || !leftShoulder || !rightShoulder || !leftHip || !rightHip) {
+        if (frameCount % 120 === 0) {
+            console.log('⚠️ Missing body parts - cannot check posture');
+        }
         return;
     }
     
     if (nose.confidence < 0.3 || leftShoulder.confidence < 0.3 || 
         rightShoulder.confidence < 0.3 || leftHip.confidence < 0.3 || 
         rightHip.confidence < 0.3) {
+        if (frameCount % 120 === 0) {
+            console.log('⚠️ Low confidence - cannot check posture');
+        }
         return;
     }
     
@@ -128,6 +148,7 @@ function checkPosture(pose) {
     if (referenceNoseY === null && frameCount < 60) {
         referenceNoseY = noseY;
         referenceShoulderY = shoulderY;
+        console.log('📍 Reference posture set!');
     }
     
     // Determine if posture is good
@@ -183,16 +204,16 @@ function checkPosture(pose) {
         }
     }
     
-    // Debug info in console
-    if (frameCount % 60 === 0) {
-        console.log('Posture Check:', {
-            headForward: headForward.toFixed(1),
-            neckLength: neckLength.toFixed(1),
-            spineDegrees: spineDegrees.toFixed(1),
-            neckDegrees: neckDegrees.toFixed(1),
-            torsoLength: torsoLength.toFixed(1),
-            isGood: isGood,
-            reason: reason
+    // Debug info in console - every 2 seconds
+    if (frameCount % 120 === 0) {
+        console.log('📏 Posture Check:', {
+            headForward: headForward.toFixed(1) + 'px',
+            neckLength: neckLength.toFixed(1) + 'px',
+            spineDegrees: spineDegrees.toFixed(1) + '°',
+            neckDegrees: neckDegrees.toFixed(1) + '°',
+            torsoLength: torsoLength.toFixed(1) + 'px',
+            isGood: isGood ? '✅' : '❌',
+            reason: reason || 'All checks passed'
         });
     }
     
@@ -205,6 +226,7 @@ function checkPosture(pose) {
             postureGood = true;
             hideAlert();
             updateStatus('good', '✅ Goede houding!', 'Je zit lekker rechtop. Ga zo door!');
+            console.log('✅ Status: GOOD posture');
             
             // Update reference when posture becomes good
             referenceNoseY = noseY;
@@ -218,6 +240,7 @@ function checkPosture(pose) {
             postureGood = false;
             showAlert();
             updateStatus('bad', '⚠️ Slechte houding!', reason);
+            console.log('❌ Status: BAD posture -', reason);
         }
     }
 }
