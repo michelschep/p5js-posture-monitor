@@ -117,60 +117,91 @@ function checkPosture(pose) {
     }
     
     // Calculate average positions
+    let shoulderX = (leftShoulder.x + rightShoulder.x) / 2;
     let shoulderY = (leftShoulder.y + rightShoulder.y) / 2;
+    let hipX = (leftHip.x + rightHip.x) / 2;
     let hipY = (leftHip.y + rightHip.y) / 2;
+    let noseX = nose.x;
     let noseY = nose.y;
     
-    // Set reference on first good detection
-    if (referenceNoseY === null) {
+    // Set reference on first good detection (first 60 frames only)
+    if (referenceNoseY === null && frameCount < 60) {
         referenceNoseY = noseY;
         referenceShoulderY = shoulderY;
     }
-    
-    // Check 1: Neck angle - is head too far forward/down?
-    let neckAngle = shoulderY - noseY;
-    
-    // Check 2: Torso angle - shoulders should be well above hips
-    let torsoLength = hipY - shoulderY;
-    
-    // Check 3: Relative position - is user slouching compared to reference?
-    let shoulderDrop = shoulderY - referenceShoulderY;
-    let noseDrop = noseY - referenceNoseY;
     
     // Determine if posture is good
     let isGood = true;
     let reason = '';
     
-    // Head too far forward or down
-    if (neckAngle < 60) {
+    // Check 1: Head forward lean - horizontal distance nose to shoulders
+    let headForward = abs(noseX - shoulderX);
+    if (headForward > 80) {
         isGood = false;
-        reason = 'Je hoofd hangt te ver naar voren!';
+        reason = 'Je leunt te ver voorover! Hoofd naar achteren!';
     }
     
-    // Slouching - shoulders dropped significantly
-    if (shoulderDrop > 40) {
+    // Check 2: Vertical alignment - head should be above shoulders
+    let neckLength = shoulderY - noseY;
+    if (neckLength < 80) {
         isGood = false;
-        reason = 'Je zakt onderuit! Schouders omhoog!';
+        reason = 'Je hoofd hangt naar voren! Kin omhoog!';
     }
     
-    // Torso compressed (sitting hunched)
-    if (torsoLength < 120) {
+    // Check 3: Spine angle - check angle between hip-shoulder and shoulder-nose
+    let spineAngleRad = atan2(shoulderY - hipY, shoulderX - hipX);
+    let neckAngleRad = atan2(noseY - shoulderY, noseX - shoulderX);
+    
+    // Spine should be mostly vertical (close to 90 degrees from horizontal)
+    let spineDegrees = abs(degrees(spineAngleRad));
+    if (spineDegrees < 70) { // Should be close to 90
         isGood = false;
-        reason = 'Je zit in elkaar gedoken! Rug recht!';
+        reason = 'Je zit onderuit! Rug recht!';
     }
     
-    // Head dropped too much relative to shoulders
-    if (noseDrop > 30 && shoulderDrop > 20) {
+    // Check 4: Forward head posture - neck angle
+    let neckDegrees = degrees(neckAngleRad);
+    // Neck should not lean forward too much (should be between -10 and -90)
+    if (neckDegrees > -10) {
         isGood = false;
-        reason = 'Je zit te onderuit! Rechtop zitten!';
+        reason = 'Stop met voorover leunen!';
     }
     
-    // Update counters
+    // Check 5: Torso compressed (sitting hunched)
+    let torsoLength = hipY - shoulderY;
+    if (torsoLength < 150) {
+        isGood = false;
+        reason = 'Je zit in elkaar gedoken! Rug strekken!';
+    }
+    
+    // Check 6: Shoulder drop compared to reference
+    if (referenceShoulderY !== null) {
+        let shoulderDrop = shoulderY - referenceShoulderY;
+        if (shoulderDrop > 50) {
+            isGood = false;
+            reason = 'Je zakt onderuit! Schouders omhoog!';
+        }
+    }
+    
+    // Debug info in console
+    if (frameCount % 60 === 0) {
+        console.log('Posture Check:', {
+            headForward: headForward.toFixed(1),
+            neckLength: neckLength.toFixed(1),
+            spineDegrees: spineDegrees.toFixed(1),
+            neckDegrees: neckDegrees.toFixed(1),
+            torsoLength: torsoLength.toFixed(1),
+            isGood: isGood,
+            reason: reason
+        });
+    }
+    
+    // Update counters with smaller threshold for faster response
     if (isGood) {
         goodPostureCount++;
         badPostureCount = 0;
         
-        if (goodPostureCount > THRESHOLD && !postureGood) {
+        if (goodPostureCount > 10 && !postureGood) {
             postureGood = true;
             hideAlert();
             updateStatus('good', '✅ Goede houding!', 'Je zit lekker rechtop. Ga zo door!');
@@ -183,7 +214,7 @@ function checkPosture(pose) {
         badPostureCount++;
         goodPostureCount = 0;
         
-        if (badPostureCount > THRESHOLD && postureGood) {
+        if (badPostureCount > 10 && postureGood) {
             postureGood = false;
             showAlert();
             updateStatus('bad', '⚠️ Slechte houding!', reason);
