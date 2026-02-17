@@ -3,7 +3,7 @@ let bodyPose;
 let poses = [];
 let modelLoaded = false;
 
-const APP_VERSION = 'v1.2';
+const APP_VERSION = 'v1.3';
 
 // Posture status
 let postureGood = true;
@@ -66,7 +66,7 @@ function draw() {
         
         // Teken keypoints
         for (let keypoint of pose.keypoints) {
-            if (keypoint.confidence > 0.3) {
+            if (keypoint.confidence > 0.1) {
                 fill(0, 255, 0);
                 noStroke();
                 circle(keypoint.x, keypoint.y, 8);
@@ -105,7 +105,7 @@ function drawSkeleton(pose) {
         let a = connection[0];
         let b = connection[1];
         
-        if (a.confidence > 0.3 && b.confidence > 0.3) {
+        if (a.confidence > 0.1 && b.confidence > 0.1) {
             line(a.x, a.y, b.x, b.y);
         }
     }
@@ -122,16 +122,31 @@ function checkPosture(pose) {
     // Check if all parts are visible
     if (!nose || !leftShoulder || !rightShoulder || !leftHip || !rightHip) {
         if (frameCount % 120 === 0) {
-            console.log('⚠️ Missing body parts - cannot check posture');
+            console.log('⚠️ Missing body parts:', {
+                nose: !!nose,
+                leftShoulder: !!leftShoulder,
+                rightShoulder: !!rightShoulder,
+                leftHip: !!leftHip,
+                rightHip: !!rightHip
+            });
         }
         return;
     }
     
-    if (nose.confidence < 0.3 || leftShoulder.confidence < 0.3 || 
-        rightShoulder.confidence < 0.3 || leftHip.confidence < 0.3 || 
-        rightHip.confidence < 0.3) {
+    // Lower confidence threshold to 0.1 (was 0.3)
+    const MIN_CONFIDENCE = 0.1;
+    
+    if (nose.confidence < MIN_CONFIDENCE || leftShoulder.confidence < MIN_CONFIDENCE || 
+        rightShoulder.confidence < MIN_CONFIDENCE || leftHip.confidence < MIN_CONFIDENCE || 
+        rightHip.confidence < MIN_CONFIDENCE) {
         if (frameCount % 120 === 0) {
-            console.log('⚠️ Low confidence - cannot check posture');
+            console.log('⚠️ Low confidence:', {
+                nose: nose.confidence.toFixed(2),
+                leftShoulder: leftShoulder.confidence.toFixed(2),
+                rightShoulder: rightShoulder.confidence.toFixed(2),
+                leftHip: leftHip.confidence.toFixed(2),
+                rightHip: rightHip.confidence.toFixed(2)
+            });
         }
         return;
     }
@@ -145,18 +160,20 @@ function checkPosture(pose) {
     let noseY = nose.y;
     
     // Set reference on first good detection (first 60 frames only)
-    if (referenceNoseY === null && frameCount < 60) {
+    if (referenceNoseY === null && frameCount < 120) {
         referenceNoseY = noseY;
         referenceShoulderY = shoulderY;
-        console.log('📍 Reference posture set!');
+        console.log('📍 Reference posture set at frame', frameCount);
     }
     
     // Determine if posture is good
     let isGood = true;
     let reason = '';
+    let checks = [];
     
     // Check 1: Head forward lean - horizontal distance nose to shoulders
     let headForward = abs(noseX - shoulderX);
+    checks.push(`headForward: ${headForward.toFixed(1)}px ${headForward > 80 ? '❌' : '✅'}`);
     if (headForward > 80) {
         isGood = false;
         reason = 'Je leunt te ver voorover! Hoofd naar achteren!';
@@ -164,6 +181,7 @@ function checkPosture(pose) {
     
     // Check 2: Vertical alignment - head should be above shoulders
     let neckLength = shoulderY - noseY;
+    checks.push(`neckLength: ${neckLength.toFixed(1)}px ${neckLength < 80 ? '❌' : '✅'}`);
     if (neckLength < 80) {
         isGood = false;
         reason = 'Je hoofd hangt naar voren! Kin omhoog!';
@@ -175,6 +193,7 @@ function checkPosture(pose) {
     
     // Spine should be mostly vertical (close to 90 degrees from horizontal)
     let spineDegrees = abs(degrees(spineAngleRad));
+    checks.push(`spineDegrees: ${spineDegrees.toFixed(1)}° ${spineDegrees < 70 ? '❌' : '✅'}`);
     if (spineDegrees < 70) { // Should be close to 90
         isGood = false;
         reason = 'Je zit onderuit! Rug recht!';
@@ -182,6 +201,7 @@ function checkPosture(pose) {
     
     // Check 4: Forward head posture - neck angle
     let neckDegrees = degrees(neckAngleRad);
+    checks.push(`neckDegrees: ${neckDegrees.toFixed(1)}° ${neckDegrees > -10 ? '❌' : '✅'}`);
     // Neck should not lean forward too much (should be between -10 and -90)
     if (neckDegrees > -10) {
         isGood = false;
@@ -190,6 +210,7 @@ function checkPosture(pose) {
     
     // Check 5: Torso compressed (sitting hunched)
     let torsoLength = hipY - shoulderY;
+    checks.push(`torsoLength: ${torsoLength.toFixed(1)}px ${torsoLength < 150 ? '❌' : '✅'}`);
     if (torsoLength < 150) {
         isGood = false;
         reason = 'Je zit in elkaar gedoken! Rug strekken!';
@@ -198,6 +219,7 @@ function checkPosture(pose) {
     // Check 6: Shoulder drop compared to reference
     if (referenceShoulderY !== null) {
         let shoulderDrop = shoulderY - referenceShoulderY;
+        checks.push(`shoulderDrop: ${shoulderDrop.toFixed(1)}px ${shoulderDrop > 50 ? '❌' : '✅'}`);
         if (shoulderDrop > 50) {
             isGood = false;
             reason = 'Je zakt onderuit! Schouders omhoog!';
@@ -207,13 +229,9 @@ function checkPosture(pose) {
     // Debug info in console - every 2 seconds
     if (frameCount % 120 === 0) {
         console.log('📏 Posture Check:', {
-            headForward: headForward.toFixed(1) + 'px',
-            neckLength: neckLength.toFixed(1) + 'px',
-            spineDegrees: spineDegrees.toFixed(1) + '°',
-            neckDegrees: neckDegrees.toFixed(1) + '°',
-            torsoLength: torsoLength.toFixed(1) + 'px',
-            isGood: isGood ? '✅' : '❌',
-            reason: reason || 'All checks passed'
+            result: isGood ? '✅ GOOD' : '❌ BAD',
+            reason: reason || 'All checks passed',
+            checks: checks
         });
     }
     
