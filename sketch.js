@@ -7,8 +7,8 @@ let modelLoaded = false;
 let postureGood = true;
 let badPostureCount = 0;
 let goodPostureCount = 0;
-const THRESHOLD = 30; // frames before changing status
-const CHECK_INTERVAL = 15; // check every N frames
+const FRAME_THRESHOLD = 10; // frames before changing status
+const CHECK_INTERVAL = 10; // check every N frames
 
 // Alert settings
 let alertShown = false;
